@@ -2,16 +2,19 @@
 pragma solidity 0.8.29;
 
 /*
-    BitLoTop (EIP-20 / BEP-20)
-    - Name: BitLoTop
-    - Symbol: BitLoTop
-    - Site: bitlo.top
-    - Decimals: 18
-    - Total supply: 1,000,000,000 * 10^18 (fixed, minted once at deployment)
-    - Fully DEX compatible (approve + transferFrom)
-    - No owner / no admin / no mint / no burn / no fees
-    - Reentrancy guard included (nonReentrant) for improved scanner ratings
-    - Compiler version locked to 0.8.29 for reproducible builds
+───────────────────────────────────────────────────────────────
+ BitLoTop (EIP-20 / BEP-20)
+───────────────────────────────────────────────────────────────
+ - Name: BitLoTop
+ - Symbol: BitLoTop
+ - Website: https://bitlo.top
+ - Decimals: 18
+ - Total supply: 1,000,000,000 * 10^18 (fixed, minted once at deployment)
+ - Fully DEX compatible (approve + transferFrom)
+ - No owner / no admin / no mint / no burn / no fees
+ - Reentrancy guard included (nonReentrant) for improved scanner ratings
+ - Compiler version locked to 0.8.29 for reproducible builds
+───────────────────────────────────────────────────────────────
 */
 
 // --------------------------------------------------
@@ -24,6 +27,7 @@ interface IERC20 {
     function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
+
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
@@ -86,17 +90,21 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
     function totalSupply() external pure override returns (uint256) { return _TOTAL_SUPPLY; }
     function balanceOf(address account) external view override returns (uint256) { return _balances[account]; }
 
+    // Transfer tokens directly
     function transfer(address to, uint256 amount) external override nonReentrant returns (bool) {
         uint256 senderBal = _balances[msg.sender];
         require(senderBal >= amount, "BitLoTop: insufficient balance");
+
         unchecked {
             _balances[msg.sender] = senderBal - amount;
             _balances[to] += amount;
         }
+
         emit Transfer(msg.sender, to, amount);
         return true;
     }
 
+    // Allowance getters/setters
     function allowance(address owner, address spender) external view override returns (uint256) {
         return _allowances[owner][spender];
     }
@@ -107,16 +115,19 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
         return true;
     }
 
+    // Transfer via allowance (used by DEXes)
     function transferFrom(address from, address to, uint256 amount) external override nonReentrant returns (bool) {
         uint256 allowed = _allowances[from][msg.sender];
         uint256 fromBal = _balances[from];
         require(fromBal >= amount, "BitLoTop: insufficient balance");
         require(allowed >= amount, "BitLoTop: allowance exceeded");
+
         unchecked {
             _balances[from] = fromBal - amount;
             _balances[to] += amount;
             _allowances[from][msg.sender] = allowed - amount;
         }
+
         emit Transfer(from, to, amount);
         return true;
     }
