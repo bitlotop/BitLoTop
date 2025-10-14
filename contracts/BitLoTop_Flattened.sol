@@ -25,13 +25,20 @@ interface IERC20Metadata is IERC20 {
     function decimals() external view returns (uint8);
 }
 
+/**
+ * @title ReentrancyGuard (Minimal)
+ * @author BitLo
+ * @dev Lightweight reentrancy protection modifier for external functions.
+ */
 abstract contract ReentrancyGuard {
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
     uint256 private _status;
+
     constructor() {
         _status = _NOT_ENTERED;
     }
+
     modifier nonReentrant() {
         require(_status == _NOT_ENTERED, "reentrant");
         _status = _ENTERED;
@@ -41,40 +48,48 @@ abstract contract ReentrancyGuard {
 }
 
 /**
- * @title BitLoTop (Gas Optimized)
+ * @title BitLoTop (Final Gas Optimized)
  * @author BitLo
- * @dev All gas-level suggestions applied (safe & ERC-20 compliant)
+ * @notice Fully ERC-20/BEP-20 compliant, fixed-supply token with all safe gas optimizations.
+ * @dev No ownership, mint, or burn. Deployer receives the full initial supply at deployment.
  */
 contract BitLoTop is IERC20Metadata, ReentrancyGuard {
-    // Use bytes32 constants for shorter literals (<32 bytes)
+    // ----- Constants -----
     bytes32 private constant _NAME_BYTES = bytes32("BitLoTop");
     bytes32 private constant _SYMBOL_BYTES = bytes32("BitLoTop");
     uint8 private constant _DECIMALS = 18;
     uint256 private constant _TOTAL_SUPPLY = 1_000_000_000 * 10**18;
 
+    // ----- Storage -----
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
 
+    /// @notice Emitted once upon deployment.
     event Deployed(address indexed deployer, uint256 totalSupply);
 
+    /**
+     * @notice Mints total supply to deployer and emits deployment event.
+     */
     constructor() payable {
         _balances[msg.sender] = _TOTAL_SUPPLY;
         emit Transfer(address(0), msg.sender, _TOTAL_SUPPLY);
         emit Deployed(msg.sender, _TOTAL_SUPPLY);
     }
 
+    // ----- ERC-20 Metadata -----
     function name() external pure override returns (string memory) {
-        return string(abi.encodePacked(_NAME_BYTES));
+        return string(bytes.concat(_NAME_BYTES));
     }
 
     function symbol() external pure override returns (string memory) {
-        return string(abi.encodePacked(_SYMBOL_BYTES));
+        return string(bytes.concat(_SYMBOL_BYTES));
     }
 
     function decimals() external pure override returns (uint8) {
         return _DECIMALS;
     }
 
+    // ----- ERC-20 Views -----
     function totalSupply() external pure override returns (uint256) {
         return _TOTAL_SUPPLY;
     }
@@ -83,11 +98,12 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
         return _balances[account];
     }
 
+    // ----- Transfers -----
     function transfer(address to, uint256 amount) external override nonReentrant returns (bool) {
         require(to != address(0), "zero");
 
         uint256 senderBal = _balances[msg.sender];
-        require(senderBal > amount - 1, "insuff"); // cheaper than >=
+        require(senderBal > amount - 1, "insuff"); // cheaper strict inequality
 
         unchecked {
             _balances[msg.sender] = senderBal - amount;
@@ -98,6 +114,7 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
         return true;
     }
 
+    // ----- Allowances -----
     function allowance(address owner, address spender) external view override returns (uint256) {
         return _allowances[owner][spender];
     }
