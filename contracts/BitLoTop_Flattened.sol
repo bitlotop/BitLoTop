@@ -11,13 +11,18 @@ pragma solidity 0.8.29;
  *  - Name: BitLoTop
  *  - Symbol: BitLoTop
  *  - Decimals: 18
- *  - Total supply: 1,000,000,000 * 10^18
+ *  - Total supply: 1,000,000,000 * 1e18
  */
 
 /* ------------------------------------------------------------------
    IERC20
    Standard ERC-20 interface
    ------------------------------------------------------------------ */
+/**
+ * @title IERC20
+ * @author BitLo
+ * @dev Standard ERC-20 interface declarations.
+ */
 interface IERC20 {
     /// @notice Returns the amount of tokens in existence.
     function totalSupply() external view returns (uint256);
@@ -48,6 +53,11 @@ interface IERC20 {
    IERC20Metadata
    Optional metadata functions from EIP-20
    ------------------------------------------------------------------ */
+/**
+ * @title IERC20Metadata
+ * @author BitLo
+ * @dev ERC-20 metadata extension.
+ */
 interface IERC20Metadata is IERC20 {
     /// @notice Returns the name of the token.
     function name() external view returns (string memory);
@@ -94,7 +104,7 @@ abstract contract ReentrancyGuard {
 }
 
 /* ------------------------------------------------------------------
-   BitLoTop (vAll-In) flattened contract
+   BitLoTop (vAll-In Final)
    ------------------------------------------------------------------ */
 /**
  * @title BitLoTop
@@ -104,15 +114,18 @@ abstract contract ReentrancyGuard {
  */
 contract BitLoTop is IERC20Metadata, ReentrancyGuard {
     // ----- Token constants -----
-    string private constant _NAME = "BitLoTop";
-    string private constant _SYMBOL = "BitLoTop";
+    /// @dev token name stored as bytes32 to optimize gas (fits within 32 bytes).
+    bytes32 private constant _NAME_B32 = "BitLoTop";
+    /// @dev token symbol stored as bytes32.
+    bytes32 private constant _SYMBOL_B32 = "BitLoTop";
+    /// @dev decimals (18)
     uint8 private constant _DECIMALS = 18;
-    // Using explicit constant for total supply for clarity
-    uint256 private constant _TOTAL_SUPPLY = 1_000_000_000 * 10**18;
+    /// @dev total supply: 1,000,000,000 * 1e18 (uses scientific notation for clarity)
+    uint256 private constant _TOTAL_SUPPLY = 1_000_000_000 * 1e18;
 
-    // ----- Storage -----
-    mapping(address => uint256) private _balances;
-    mapping(address => mapping(address => uint256)) private _allowances;
+    // ----- Storage (named mapping parameters for clarity) -----
+    mapping(address account => uint256) private _balances;
+    mapping(address owner => mapping(address spender => uint256)) private _allowances;
 
     /// @notice Emitted once when the contract is deployed.
     event Deployed(address indexed deployer, uint256 totalSupply);
@@ -127,37 +140,57 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
         emit Deployed(msg.sender, _TOTAL_SUPPLY);
     }
 
-    // ----- ERC-20 Metadata -----
-    /// @inheritdoc IERC20Metadata
-    function name() external pure override returns (string memory) { return _NAME; }
+    // -------------------------
+    // Metadata functions
+    // -------------------------
 
     /// @inheritdoc IERC20Metadata
-    function symbol() external pure override returns (string memory) { return _SYMBOL; }
+    function name() external pure override returns (string memory) {
+        // convert bytes32 constant to string via abi.encodePacked (gas acceptable for view)
+        return string(abi.encodePacked(_NAME_B32));
+    }
 
     /// @inheritdoc IERC20Metadata
-    function decimals() external pure override returns (uint8) { return _DECIMALS; }
+    function symbol() external pure override returns (string memory) {
+        return string(abi.encodePacked(_SYMBOL_B32));
+    }
 
-    // ----- ERC-20 Views -----
+    /// @inheritdoc IERC20Metadata
+    function decimals() external pure override returns (uint8) {
+        return _DECIMALS;
+    }
+
+    // -------------------------
+    // View functions
+    // -------------------------
+
     /// @inheritdoc IERC20
-    function totalSupply() external pure override returns (uint256) { return _TOTAL_SUPPLY; }
+    function totalSupply() external pure override returns (uint256) {
+        return _TOTAL_SUPPLY;
+    }
 
     /// @inheritdoc IERC20
+    /// @param account Address to query balance of.
     function balanceOf(address account) external view override returns (uint256) {
         return _balances[account];
     }
 
-    // ----- ERC-20 Transfer -----
+    // -------------------------
+    // Transfer functions
+    // -------------------------
+
     /**
      * @notice Transfer tokens from caller to `to`.
      * @dev Prevents sending to zero address and uses cached balance to save gas.
      * @param to Recipient address (non-zero).
      * @param amount Amount to transfer.
-     * @return True on success.
+     * @return success True on success.
      */
     function transfer(address to, uint256 amount) external override nonReentrant returns (bool) {
-        require(to != address(0), "zero");
+        require(to != address(0), "zero"); // short message to save gas
         uint256 senderBal = _balances[msg.sender];
-        require(senderBal > amount - 1, "insuff"); // cheaper strict check equivalent to >=
+        // use strict cheaper check equivalent to >=
+        require(senderBal > amount - 1, "insuff");
         unchecked {
             _balances[msg.sender] = senderBal - amount;
             _balances[to] += amount;
@@ -166,8 +199,11 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
         return true;
     }
 
-    // ----- Allowance / Approve -----
-    /// @inheritdoc IERC20
+    /**
+     * @inheritdoc IERC20
+     * @param owner Owner address in allowance lookup.
+     * @param spender Spender address in allowance lookup.
+     */
     function allowance(address owner, address spender) external view override returns (uint256) {
         return _allowances[owner][spender];
     }
@@ -177,11 +213,11 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
      * @dev Avoid redundant SSTORE when the value is unchanged to save gas.
      * @param spender Spender address (non-zero).
      * @param amount Amount to approve.
-     * @return True on success.
+     * @return success True on success.
      */
     function approve(address spender, uint256 amount) external override returns (bool) {
         require(spender != address(0), "zero");
-        // only write if the value changes (avoids Gsreset if same)
+        // only write if the value changes (avoids costly SSTORE when unchanged)
         if (_allowances[msg.sender][spender] != amount) {
             _allowances[msg.sender][spender] = amount;
         }
@@ -195,7 +231,7 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
      * @param from Source address (must have balance).
      * @param to Recipient address (non-zero).
      * @param amount Amount to transfer.
-     * @return True on success.
+     * @return success True on success.
      */
     function transferFrom(address from, address to, uint256 amount)
         external
@@ -205,10 +241,11 @@ contract BitLoTop is IERC20Metadata, ReentrancyGuard {
     {
         require(to != address(0), "zero");
 
+        // cache reads
         uint256 allowed = _allowances[from][msg.sender];
         uint256 fromBal = _balances[from];
 
-        require(fromBal > amount - 1, "insuff"); // same efficient >= replacement
+        require(fromBal > amount - 1, "insuff");
         require(allowed > amount - 1, "allow");
 
         unchecked {
