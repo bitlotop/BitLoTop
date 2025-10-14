@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.19;
+pragma solidity 0.8.29;
 
 /*
     BitLoTop (EIP-20 / BEP-20)
