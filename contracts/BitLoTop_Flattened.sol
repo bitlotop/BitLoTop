@@ -3,16 +3,14 @@ pragma solidity 0.8.29;
 
 /**
  * @title BitLoTop Token (BEP-20 / ERC-20)
- * @notice Simple, fixed-supply token for DEX trading and general use.
- * @dev No owner, no minting, no burning, no fees. Supply minted once at deployment.
- * - Name: BitLoTop
- * - Symbol: BitLoTop
- * - Decimals: 18
- * - Total Supply: 1,000,000,000 * 10^18
- * - Compatible with PancakeSwap and all EVM DEXs.
+ * @author BitLo
+ * @notice Fixed-supply BEP-20 token intended for DEX trading and general use.
+ * @dev No owner, no mint, no burn, no fees. Supply minted once at deployment.
  */
 
-/// @dev Standard ERC-20 interface
+// --------------------------------------------------
+// IERC20
+// --------------------------------------------------
 interface IERC20 {
     function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
@@ -20,109 +18,172 @@ interface IERC20 {
     function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
+
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-/// @dev Metadata interface (name, symbol, decimals)
+// --------------------------------------------------
+// IERC20Metadata
+// --------------------------------------------------
 interface IERC20Metadata is IERC20 {
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
     function decimals() external view returns (uint8);
 }
 
-/// @dev Reentrancy protection
+// --------------------------------------------------
+// ReentrancyGuard (gas-optimized)
+// --------------------------------------------------
+/**
+ * @dev Simple reentrancy guard. Use `nonReentrant` on functions that modify state
+ *      and might be used in complex external flows.
+ */
 abstract contract ReentrancyGuard {
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
     uint256 private _status;
 
+    /// @dev Initialize guard to not entered.
     constructor() {
         _status = _NOT_ENTERED;
     }
 
+    /// @notice Prevents reentrant calls to a function.
     modifier nonReentrant() {
-        require(_status == _NOT_ENTERED, "ReentrancyGuard: reentrant call");
+        require(_status == _NOT_ENTERED, "reentrant");
         _status = _ENTERED;
         _;
         _status = _NOT_ENTERED;
     }
 }
 
-/// @title BitLoTop Token Contract
+// --------------------------------------------------
+// BitLoTop Token Implementation (vFinal-Plus)
+// --------------------------------------------------
+/**
+ * @title BitLoTop
+ * @author BitLo
+ * @notice BitLoTop is a simple, fixed-supply ERC-20 / BEP-20 token.
+ * @dev Implementation is intentionally minimal and immutable: no owner/admin, no mint/burn.
+ */
 contract BitLoTop is IERC20Metadata, ReentrancyGuard {
-
-    // ----- Token Details -----
+    // ----- Token constants -----
     string private constant _NAME = "BitLoTop";
     string private constant _SYMBOL = "BitLoTop";
     uint8 private constant _DECIMALS = 18;
     uint256 private constant _TOTAL_SUPPLY = 1_000_000_000 * 10**18;
 
-    // ----- State -----
+    // ----- Storage -----
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
 
     /// @notice Emitted when the contract is deployed.
     event Deployed(address indexed deployer, uint256 totalSupply);
 
-    /// @notice Deploy token and mint full supply to deployer
+    /**
+     * @notice Construct the token and mint the full supply to deployer.
+     * @dev Emits Transfer(address(0), deployer, totalSupply) and Deployed event.
+     */
     constructor() {
         _balances[msg.sender] = _TOTAL_SUPPLY;
         emit Transfer(address(0), msg.sender, _TOTAL_SUPPLY);
         emit Deployed(msg.sender, _TOTAL_SUPPLY);
     }
 
-    // ----- ERC20 Metadata -----
+    // ----- ERC-20 Metadata -----
+    /// @notice Token name.
     function name() external pure override returns (string memory) { return _NAME; }
+
+    /// @notice Token symbol.
     function symbol() external pure override returns (string memory) { return _SYMBOL; }
+
+    /// @notice Token decimals.
     function decimals() external pure override returns (uint8) { return _DECIMALS; }
 
-    // ----- ERC20 Logic -----
+    // ----- ERC-20 Views -----
+    /// @notice Total token supply.
+    /// @return total supply in smallest units.
     function totalSupply() external pure override returns (uint256) { return _TOTAL_SUPPLY; }
 
+    /// @notice Get balance of `account`.
+    /// @param account Address to query.
+    /// @return token balance.
     function balanceOf(address account) external view override returns (uint256) {
         return _balances[account];
     }
 
+    // ----- ERC-20 Transfers -----
+    /**
+     * @notice Transfer `amount` tokens to `to`.
+     * @dev Sender must have at least `amount`. Prevents sending to zero address.
+     * @param to Recipient address.
+     * @param amount Amount to transfer.
+     * @return success True if transfer succeeded.
+     */
     function transfer(address to, uint256 amount) external override nonReentrant returns (bool) {
-        require(to != address(0), "BitLoTop: transfer to zero address");
-        uint256 senderBalance = _balances[msg.sender];
-        require(senderBalance >= amount, "BitLoTop: insufficient balance");
+        require(to != address(0), "zero addr");
+        uint256 senderBal = _balances[msg.sender];
+        require(senderBal >= amount, "insufficient");
         unchecked {
-            _balances[msg.sender] = senderBalance - amount;
+            _balances[msg.sender] = senderBal - amount;
             _balances[to] += amount;
         }
         emit Transfer(msg.sender, to, amount);
         return true;
     }
 
+    // ----- Allowance / Approve -----
+    /// @notice Returns remaining allowance `spender` has from `owner`.
     function allowance(address owner, address spender) external view override returns (uint256) {
         return _allowances[owner][spender];
     }
 
+    /**
+     * @notice Approve `spender` to spend `amount` on caller's behalf.
+     * @dev Avoids re-writing storage if value is unchanged to save gas.
+     * @param spender Spender address.
+     * @param amount Amount approved.
+     * @return success True if approval succeeded.
+     */
     function approve(address spender, uint256 amount) external override returns (bool) {
-        require(spender != address(0), "BitLoTop: approve to zero address");
-        _allowances[msg.sender][spender] = amount;
+        require(spender != address(0), "zero addr");
+        // Avoid redundant SSTORE when value unchanged
+        if (_allowances[msg.sender][spender] != amount) {
+            _allowances[msg.sender][spender] = amount;
+        }
         emit Approval(msg.sender, spender, amount);
         return true;
     }
 
+    /**
+     * @notice Transfer `amount` tokens from `from` to `to` using allowance.
+     * @dev `from` must have approved caller for at least `amount`.
+     * @param from Source address.
+     * @param to Recipient address.
+     * @param amount Amount to transfer.
+     * @return success True if transfer succeeded.
+     */
     function transferFrom(address from, address to, uint256 amount)
         external
         override
         nonReentrant
         returns (bool)
     {
-        require(to != address(0), "BitLoTop: transfer to zero address");
+        require(to != address(0), "zero addr");
+
         uint256 allowed = _allowances[from][msg.sender];
-        uint256 fromBalance = _balances[from];
-        require(fromBalance >= amount, "BitLoTop: insufficient balance");
-        require(allowed >= amount, "BitLoTop: allowance exceeded");
+        uint256 fromBal = _balances[from];
+
+        require(fromBal >= amount, "insufficient");
+        require(allowed >= amount, "allowance");
+
         unchecked {
-            _balances[from] = fromBalance - amount;
+            _balances[from] = fromBal - amount;
             _balances[to] += amount;
             _allowances[from][msg.sender] = allowed - amount;
         }
+
         emit Transfer(from, to, amount);
         return true;
     }
